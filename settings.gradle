@@ -1,0 +1,2 @@
+rootProject.name = "EveLauncher"
+include ':app'
