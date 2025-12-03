@@ -7,6 +7,9 @@ local.properties
 captures/
 output.json
 
+keystore.jks
+gradle.properties
+
 # OS files
 .DS_Store
 Thumbs.db
