@@ -4,8 +4,10 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.os.Build;
 import android.os.IBinder;
 
 import androidx.annotation.Nullable;
@@ -15,11 +17,14 @@ public class SoundService extends Service {
 
     private MediaPlayer mp;
     private MediaSessionCompat mediaSession;
+    private AudioManager audioManager;
+    private AudioFocusRequest focusRequest;
 
     @Override
     public void onCreate() {
         super.onCreate();
         initMediaSession();
+        initAudioManager();
         playAudio();
     }
 
@@ -28,58 +33,81 @@ public class SoundService extends Service {
         mediaSession.setActive(true);
     }
 
-    private void playAudio() {
-        mp = MediaPlayer.create(this, R.raw.eve_welcome);
-        if (mp != null) {
-            mp.setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build());
-
-            mp.setOnCompletionListener(mediaPlayer -> {
-                mediaPlayer.release();
-                abandonFocus();
-                stopMediaSession();
-                stopSelf();
-            });
-
-            mp.start();
-        } else {
-            abandonFocus();
-            stopMediaSession();
-            stopSelf();
-        }
+    private void initAudioManager() {
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
     }
 
-    private void stopMediaSession() {
+    private void playAudio() {
+        mp = MediaPlayer.create(this, R.raw.eve_welcome);
+
+        if (mp == null) {
+            cleanup();
+            return;
+        }
+
+        // AudioAttributes optimized for AA / car audio
+        AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+
+        mp.setAudioAttributes(audioAttributes);
+
+        // Request audio focus to duck other media (Spotify, etc.)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(audioAttributes)
+                    .setOnAudioFocusChangeListener(focusChange -> {})
+                    .build();
+
+            int result = audioManager.requestAudioFocus(focusRequest);
+            if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                cleanup();
+                return;
+            }
+        } else {
+            int result = audioManager.requestAudioFocus(
+                    null,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+            );
+            if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                cleanup();
+                return;
+            }
+        }
+
+        // Completion listener cleans up everything
+        mp.setOnCompletionListener(mediaPlayer -> cleanup());
+
+        // Start playback
+        mp.start();
+    }
+
+    private void cleanup() {
+        if (mp != null) {
+            mp.release();
+            mp = null;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && focusRequest != null) {
+            audioManager.abandonAudioFocusRequest(focusRequest);
+        } else {
+            audioManager.abandonAudioFocus(null);
+        }
+
         if (mediaSession != null) {
             mediaSession.setActive(false);
             mediaSession.release();
             mediaSession = null;
         }
-    }
 
-    private void abandonFocus() {
-        AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        if (am != null) {
-            am.abandonAudioFocus(null);
-        }
+        stopSelf();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // No need for foreground service unless you want persistent playback
         return START_NOT_STICKY;
-    }
-
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        if (mp != null) {
-            mp.release();
-            mp = null;
-        }
-        stopMediaSession();
     }
 
     @Nullable

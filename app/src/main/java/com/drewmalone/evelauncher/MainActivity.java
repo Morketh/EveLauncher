@@ -2,6 +2,7 @@ package com.drewmalone.evelauncher;
 
 import android.content.Intent;
 import android.os.Bundle;
+
 import androidx.appcompat.app.AppCompatActivity;
 
 public class MainActivity extends AppCompatActivity {
@@ -10,11 +11,11 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Launch the SoundService to play the audio
+        // Start the SoundService
         Intent serviceIntent = new Intent(this, SoundService.class);
         startService(serviceIntent);
 
-        // Close the launcher activity immediately
+        // Immediately finish activity so no UI flash
         finish();
     }
 }
